@@ -50,7 +50,7 @@ if __name__ == "__main__":
             triggers = [
                 DeploymentTrigger(
                     match={"prefect.resource.id": "email-webhook-id"},
-                    parameters={"email": "{{ body.message_txt }}"},
+                    parameters={"email": "{{ event.resource.message_txt }}"},
                 )
             ]
         )
