@@ -5,12 +5,12 @@ def trigger_webhook(msg: str) -> None:
     
 
     url = 'https://api.prefect.cloud/hooks/bSHnwyVlSn1WfbuRVZH35g'
-    myobj = {'message_text': msg}
+    payload = {'message_text': msg}
 
-    x = requests.post(url, json = myobj)
+    x = requests.post(url, json = payload)
 
     print(x)
 
 if __name__ == "__main__":
-    email = String.load("test-email").value,
-    trigger_webhook("trigger my webhook")
+    email_address = String.load("test-email").value
+    trigger_webhook(email_address)
