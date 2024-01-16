@@ -41,7 +41,7 @@ if __name__ == "__main__":
     if deploy_flow:
         send_data_report.from_source(
             source="https://github.com/mt7180/energy-dashboard.git", 
-            entrypoint="/prefect_workflows/send_data_report.py:send_data_report"
+            entrypoint="./prefect_workflows/send_data_report.py:send_data_report"
         ).deploy(
             name="my-first-deployment", 
             work_pool_name="my_prefect_managed_infra", 
