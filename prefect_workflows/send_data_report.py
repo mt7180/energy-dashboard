@@ -1,7 +1,6 @@
 from prefect import flow
 from prefect_email import EmailServerCredentials, email_send_message
 from prefect.blocks.system import String
-from dotenv import load_dotenv
 from typing import NamedTuple
 
 class User(NamedTuple):
@@ -35,7 +34,8 @@ def send_data_report() -> None:
     )
 
 if __name__ == "__main__":
-    deploy_flow = False
+    from dotenv import load_dotenv
+    deploy_flow = True
     load_dotenv(override=True)
 
     if deploy_flow:
