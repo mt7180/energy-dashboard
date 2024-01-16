@@ -1,6 +1,5 @@
 from prefect import flow
 from prefect_email import EmailServerCredentials, email_send_message
-from prefect.blocks.system import String
 from typing import NamedTuple
 
 class User(NamedTuple):
@@ -9,7 +8,7 @@ class User(NamedTuple):
     country_code: str
 
 @flow
-def send_data_report() -> None:
+def send_data_report(email: str) -> None:
     """in this example the data won't be loaded into a database,
     but will be sent to registered users
     """
@@ -17,7 +16,7 @@ def send_data_report() -> None:
     email_server_credentials = EmailServerCredentials.load("my-email-credentials")
     user = User(
         name="test_user",
-        email=String.load("test-email").value,
+        email=email,
         country_code="DE"
     )
     
@@ -35,6 +34,9 @@ def send_data_report() -> None:
 
 if __name__ == "__main__":
     from dotenv import load_dotenv
+    from prefect.flows import DeploymentTrigger
+
+
     deploy_flow = True
     load_dotenv(override=True)
 
@@ -44,7 +46,13 @@ if __name__ == "__main__":
             entrypoint="./prefect_workflows/send_data_report.py:send_data_report"
         ).deploy(
             name="my-first-deployment", 
-            work_pool_name="my_prefect_managed_infra", 
+            work_pool_name="my_prefect_managed_infra",
+            triggers = [
+                DeploymentTrigger(
+                    match={"prefect.resource.id": "email-webhook-id"},
+                    parameters={"email": "{{ body.message_txt }}"},
+                )
+            ]
         )
     else:
         send_data_report()
