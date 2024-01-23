@@ -1,0 +1,40 @@
+html, body, [class*="css"] {
+    font-family: 'Azeret Mono', monospace;
+}
+
+/* .block-container,
+.reportview-container,
+.main 
+{
+    /* padding-top: 5px; */
+    /* padding-bottom: 0;
+} */
+
+.main > div {
+    padding-left: 2rem;
+    padding-right: 2rem;
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+    background-color: #F8F8F8;
+   
+}
+
+
+[data-testid="stTextInput"]>div>div>input,
+[data-testid="stForm"],
+[data-testid="baseButton-secondary"] {
+    /* border: 1px solid black; */
+    border-radius: 7px;
+    /* background-color: white; */
+    /* margin: 0px; */
+}
+
+/* hr {
+    margin-top: 0;
+    margin-bottom: 5%;
+} */
+
+h1 {
+    color: white;
+
+}
