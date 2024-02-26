@@ -3,3 +3,6 @@ venv
 *.pyc
 *notes*
 tmp
+old
+prefect_workflows
+.DS_Store
