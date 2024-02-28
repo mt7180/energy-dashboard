@@ -4,7 +4,7 @@ import pandas as pd
 import copy
 import math
 
-from .helpers import get_color, color_sequences
+from .helpers import get_color, color_sequences, get_iso_alpha
 
 SECONDARY_COLOR = "#1B8A85"
 TEXT_COLOR = "#818494"
@@ -53,50 +53,33 @@ def create_bar_chart(df_data):
     return fig
 
 
-# def color(type: str) -> str:
-
-
 def create_bar_chart2(df_data: pd.DataFrame, tz):
-    # breakpoint()
     color_sequences_copy = copy.deepcopy(color_sequences)
-    data = (
-        [
-            go.Bar(
-                x=df_data.index,  # df_data, #.loc[:, "FC_" not in df_data.columns],#~df_data.columns.isin(['FC_', 'C'])],
-                y=df_data[column],
-                name=column,
-                showlegend=False,
-                marker_color=get_color(column, color_sequences_copy),
-                hovertext=column,
-                # labels={
-                #     "value": "Actual Aggregated Generation [MW]",
-                #     "variable": "Production Type",
-                #     "index": "Date",
-                # },
-                # https://plotly.com/python/discrete-color/
-            )
-            for column in sorted(df_data.columns)
-            if "FC_" not in column
-        ]
-        + [  # in df_data.loc[:, ["FC_" not in col for col in df_data.columns ]]
-            go.Bar(
-                x=df_data.index,  # df_data, #.loc[:, "FC_" not in df_data.columns],#~df_data.columns.isin(['FC_', 'C'])],
-                y=df_data[column],
-                name=column,
-                legend="legend2",
-            )
-            for column in sorted(
-                df_data.loc[:, ["FC_" in col for col in df_data.columns]]
-            )
-        ]
-    )
+    data = [
+        go.Bar(
+            x=df_data.index,
+            y=df_data[column],
+            name=column,
+            showlegend=False,
+            marker_color=get_color(column, color_sequences_copy),
+            hovertext=column,
+        )
+        for column in sorted(df_data.columns)
+        if "FC_" not in column
+    ] + [
+        go.Bar(
+            x=df_data.index,
+            y=df_data[column],
+            name=column,
+            legend="legend2",
+        )
+        for column in sorted(df_data.loc[:, ["FC_" in col for col in df_data.columns]])
+    ]
     fig = go.Figure(data=data)
 
     fig.update_layout(
-        # title="Aggregated Generation per Production Type",
-        # template="simple_white",
         height=250,
-        margin=dict(t=50, b=10),
+        margin=dict(t=50, b=15, l=5, r=5),
         yaxis=dict(title_text="MW"),
         barmode="stack",
         showlegend=True,
@@ -108,30 +91,25 @@ def create_bar_chart2(df_data: pd.DataFrame, tz):
             x=0.5,
             font={"size": TITLE_SIZE, "color": TEXT_COLOR},
         ),
-        # title_font = dict(
-        #     size=TITLE_SIZE,
-        #     color=TEXT_COLOR
-        # ),
-        # legend={
-        #     "orientation":"h",
-        #     #"title": "Types",
-        #     "yanchor":"top",
-        #     "y":1.6,
-        #     "xanchor":"center",
-        #     "x":0.5,
-        #     "yref": "paper",
-        #     "bgcolor":"rgba(0,0,0,0)",
-        #     "font_size": 10,
-        # },
         legend2={
             # "title": "Forecast",
-            # "orientation":"h",
             "yanchor": "bottom",
             "xanchor": "right",
             "yref": "paper",
             "x": 0.99,
             "y": 0.01,
         },
+    )
+
+    if df_data.empty:
+        return fig
+
+    fig.update_xaxes(
+        dtick=3600000.0,
+        ticklabelstep=12,
+        tickcolor="gray",
+        ticks="outside",
+        ticklen=3,
     )
 
     today = pd.Timestamp.today(tz=tz)
@@ -148,7 +126,7 @@ def create_bar_chart2(df_data: pd.DataFrame, tz):
         xref="x",
         yref="paper",
     )
-    fig.add_annotation(  # add a marker for today
+    fig.add_annotation(  # add a marker for now
         text="now",
         x=today,
         y=1.1,
@@ -161,12 +139,40 @@ def create_bar_chart2(df_data: pd.DataFrame, tz):
     return fig
 
 
-def create_horizontal_bar_chart(data_df: pd.DataFrame, title: str) -> go.Figure:
-    if data_df.empty:
-        return None
+def create_horizontal_bar_chart(data_df: pd.DataFrame) -> go.Figure:
     color_sequences_copy = copy.deepcopy(color_sequences)
 
-    fig = go.Figure(
+    fig = go.Figure()
+
+    fig.update_layout(
+        title=dict(
+            text="Capacity Factor per Production Type (last 24 Hours)",
+            yanchor="top",
+            y=0.95,
+            xanchor="center",
+            x=0.5,
+            font={"size": TITLE_SIZE, "color": TEXT_COLOR},
+        ),
+        barmode="overlay",
+        yaxis=dict(
+            anchor="free",
+            position=0.99,
+        ),
+        margin=dict(l=30, r=30, t=80),
+        xaxis=dict(title="mean aggregated generation [MW] / capacity factor [%]"),
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=1.1,
+            xanchor="center",
+            x=0.5,
+        ),
+    )
+
+    if data_df.empty:
+        return fig
+
+    fig.add_trace(
         go.Bar(
             x=data_df["capacity"],
             y=data_df.reset_index()["index"],
@@ -185,40 +191,13 @@ def create_horizontal_bar_chart(data_df: pd.DataFrame, title: str) -> go.Figure:
             text=data_df["CF_Day"],
             texttemplate="%{text:.1%}",
             textposition="outside",
-            # marker_color=SECONDARY_COLOR,
-            name="Daily Mean Aggregated",  # will be monthly?!
-            # marker=dict(color=data_df["capacity"],colorscale=px.colors.sequential.Viridis), #Blugrn
+            name="Daily Mean Aggregated",  # better monthly
             marker_color=[
                 get_color(source, color_sequences_copy) for source in data_df.index
             ],
         ),
     )
     fig.add_trace(go.Scatter(x=[], y=[], name="yaxis data"))
-
-    fig.update_layout(
-        title=dict(
-            text="Capacity Factor by Source (last 24 Hours)",
-            yanchor="top",
-            y=0.95,
-            xanchor="center",
-            x=0.5,
-            font={"size": TITLE_SIZE, "color": TEXT_COLOR},
-        ),
-        barmode="overlay",
-        yaxis=dict(
-            anchor="free",
-            position=0.99,
-        ),
-        margin=dict(l=30, r=30, t=80),
-        xaxis=dict(title="installed capacity, aggregated [MW] / capacity factor [%]"),
-        legend=dict(
-            orientation="h",
-            yanchor="top",
-            y=1.1,
-            xanchor="center",
-            x=0.5,
-        ),
-    )
 
     return fig
 
@@ -283,7 +262,7 @@ def create_gauge(value, indicator_suffix, indicator_title, threshold, sub_text):
     # )
 
     # fig.add_trace(go.Scatter(x=[0,1,2], y=[0,2,0], fill="toself", color="black"))
-    print(value)
+
     y_offset = 0.1
     radius = 0.4
     width = 0.02
@@ -300,8 +279,6 @@ def create_gauge(value, indicator_suffix, indicator_title, threshold, sub_text):
     x2 = 0.5 + math.sin(theta_rad) * width
     y2 = y_offset + math.cos(theta_rad) * width
 
-    print(f"{theta=} {x1=} {y1=}")
-    # fig.add_shape(
     fig.update_layout(
         xaxis={"showgrid": False, "showticklabels": False, "range": [0, 1]},
         yaxis={"showgrid": False, "showticklabels": False, "range": [0, 1]},
@@ -310,16 +287,7 @@ def create_gauge(value, indicator_suffix, indicator_title, threshold, sub_text):
                 type="path",
                 path=f" M {x0} {y0} L {x1} {y1} L {x2} {y2} Z",
                 fillcolor="black",
-                # line_color="black",
-                # line_width=1,
-                # opacity=1,
-                # line_dash="dot",
-                # x0=0.5,
-                # x1=x1,
-                # y0=0.3,
-                # y1=y1+0.12,
                 xref="x",
-                # xref="paper",
                 yref="y",
             ),
             go.layout.Shape(
@@ -344,6 +312,20 @@ def create_gauge(value, indicator_suffix, indicator_title, threshold, sub_text):
 def create_metrics(label, value, tz, data_df=None, prefix="", suffix=""):
     fig = go.Figure()
 
+    fig.update_xaxes(
+        visible=False,
+        fixedrange=True,
+    )
+    fig.update_yaxes(visible=False, fixedrange=True)
+    fig.update_layout(
+        # paper_bgcolor="lightgrey",
+        margin=dict(t=10, b=5, l=5, r=5),
+        showlegend=False,
+        plot_bgcolor="white",
+        height=70,
+        width=200,
+    )
+
     fig.add_trace(
         go.Indicator(
             value=round(value, 2),
@@ -360,6 +342,15 @@ def create_metrics(label, value, tz, data_df=None, prefix="", suffix=""):
             domain={"x": [0.0, 1.0], "y": [0.5, 1]},
         )
     )
+
+    if value == 0.0:
+        fig.add_annotation(
+            text="data set not complete",
+            showarrow=False,
+            xanchor="center",
+            yanchor="bottom",
+            y=0.0,
+        )
 
     if data_df is not None:
         color_sequence = px.colors.sequential.Teal[2::2]
@@ -411,17 +402,6 @@ def create_metrics(label, value, tz, data_df=None, prefix="", suffix=""):
             yanchor="bottom",
         )
 
-    fig.update_xaxes(visible=False, fixedrange=True)
-    fig.update_yaxes(visible=False, fixedrange=True)
-    fig.update_layout(
-        # paper_bgcolor="lightgrey",
-        margin=dict(t=10, b=0),
-        showlegend=False,
-        plot_bgcolor="white",
-        height=70,
-        width=200,
-    )
-
     return fig
 
 
@@ -433,8 +413,7 @@ def create_pie_chart(df, datetime):
         source_type: get_color(source_type, color_sequences_copy)
         for source_type in df.index
     }
-    print(colors)
-    total = df.sum()
+
     # print(df[df["data"]/float(total) > 0.005]["data"],)
     # df.drop(df[df["data"]/float(total) < 0.005].index, inplace=True)
     # fig.add_trace(
@@ -448,25 +427,12 @@ def create_pie_chart(df, datetime):
     #         sort=False,
     #     )
     # )
-    fig = px.pie(
-        df.reset_index(),
-        values="data",
-        names="index",
-        color="index",
-        color_discrete_map=colors,
-        title=f"Current Power Mix: {datetime: %d.%m.%Y %H:%M}",
-    )
-
-    fig.update_traces(
-        sort=False,
-        textinfo="percent",
-    )
-
+    fig = go.Figure()
     fig.update_layout(
         margin=dict(t=70, b=90),
-        # height=250,
-        # width=200,
         title=dict(
+            text=f"Current Power Mix: {datetime: %d.%m.%Y %H:%M}<br> <span style='font-size:1rem'>"
+            + "(latest data available)",
             yanchor="top",
             y=0.95,
             xanchor="center",
@@ -475,23 +441,55 @@ def create_pie_chart(df, datetime):
         ),
     )
 
+    if df.empty:
+        return fig
+
+    fig = fig.add_traces(
+        px.pie(
+            df.reset_index(),
+            values="data",
+            names="index",
+            color="index",
+            color_discrete_map=colors,
+            # title=
+        ).data[0]
+    )
+
+    fig.update_traces(
+        sort=True,
+        textinfo="percent",
+    )
+
     return fig
 
 
-def create_map(df, country_code: str):
-    df = pd.DataFrame(data={"iso_alpha": "DEU"}, index=[1])
+def create_map(df, country_code: str, text: str):
+    df = pd.DataFrame(
+        data=[
+            iso
+            for country in country_code.split("_")
+            if (iso := get_iso_alpha(country)) is not None
+        ],
+        columns=["iso_alpha"],
+    )
+
     fig = px.choropleth(
         df,
         locations="iso_alpha",
         scope="europe",
-        color=[1],
-        # color="renewable_share", # lifeExp is a column of gapminder
-        # hover_name="country", # column to add to hover information
+        color=[1] * len(df),
         color_continuous_scale="Darkmint",
-        # locationmode='USA-states',
+    )
+    fig.add_annotation(
+        text=text,
+        x=0.1,
+        y=0.9,
+        yref="paper",
+        showarrow=False,
+        font={"color": "gray"},
+        bgcolor="white",
     )
     fig.update_geos(
-        # fitbounds="locations",
         showcountries=True,
         countrycolor="Black",
         # projection_type="orthographic",
@@ -502,7 +500,7 @@ def create_map(df, country_code: str):
         rivercolor="Blue",
     )
     fig.update_layout(
-        margin=dict(t=0, b=0),
+        margin=dict(t=0, b=5, l=5, r=5),
         height=250,
         showlegend=False,
         autosize=True,

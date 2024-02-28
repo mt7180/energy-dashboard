@@ -58,7 +58,7 @@ class Data:
         try:
             super().__getattr__(name)
 
-        except:
+        except AttributeError:
             if name in self.__data.keys():
                 return self.__data[name]
 
@@ -118,7 +118,6 @@ class Data:
         )
 
     def current_gen_by_source(self):
-        # todo: funktioniert abfrage?!
         if not all(
             [
                 DataKeys.CURRENT_GENERATION_ENTSOE.name in self.keys(),
@@ -153,13 +152,32 @@ class Data:
             right_index=True,
         ).fillna(0)
 
+    @staticmethod
+    def get_last_complete_row_index(df: pd.DataFrame):
+        for row in df.index[::-1]:
+            if all(df.loc[row].notna()):
+                return row
+        return df.index[0]
+
     def current_power_mix(self):
-        pass
+        if DataKeys.CURRENT_GENERATION_ENTSOE.name not in self.keys():
+            return pd.DataFrame(), pd.to_datetime("01.01.2000", format="%d.%m.%Y")
+
+        last_complete_row_index = self.get_last_complete_row_index(
+            self.CURRENT_GENERATION_ENTSOE.stack(level=0).unstack()["Actual Aggregated"]
+        )
+        return (
+            self.CURRENT_GENERATION_ENTSOE.stack(level=0)
+            .unstack()["Actual Aggregated"]
+            .loc[last_complete_row_index]
+            .T.to_frame()
+            .set_axis(["data"], axis=1),
+            last_complete_row_index,
+        )
 
     def total_power_aggregated_yesterday(self):
         """Yesterdays total aggregated electricity generation in TWh"""
 
-        # todo: if not in data return
         if not all(
             [
                 "CURRENT_GENERATION_ENTSOE" in self.keys(),
@@ -167,11 +185,9 @@ class Data:
             ]
         ):
             return (0, 0)
-        # tz = self.CURRENT_GENERATION_ENTSOE.index.tz
         now = pd.Timestamp.now(tz=self.tz)
-        start_time = now.floor("D")
-        end_time = start_time - pd.Timedelta(days=1)
-
+        end_time = now.floor("D")
+        start_time = end_time - pd.Timedelta(days=1)
         total_capacity = self.CAPACITY_BY_SOURCE_ENTSOE.sum(axis=1)
 
         hourly_mean_aggregated = (
@@ -185,6 +201,10 @@ class Data:
             .mean()
         )
 
+        # if data is missing:
+        if len(hourly_mean_aggregated) != hourly_mean_aggregated.notna().T.all().sum():
+            return 0, 0
+
         total_aggregated_yesterday = (
             hourly_mean_aggregated.resample("1D").sum().iloc[0].Total / 10**6
         )
@@ -195,12 +215,10 @@ class Data:
             return 0
 
         today = pd.Timestamp.today(tz=self.tz).floor("D")
-        print(f"today: {today}, yesterday: {today-pd.Timedelta(days=1)}")
-        print(self.RENEWABLE_SHARE_ENERGY_CHARTS.tail())
-        return (
-            self.RENEWABLE_SHARE_ENERGY_CHARTS.loc[today - pd.Timedelta(days=1), "data"]
-            / 100
-        )
+
+        return self.RENEWABLE_SHARE_ENERGY_CHARTS.loc[
+            today - pd.Timedelta(days=1), "data"
+        ]
 
     def renewable_share(self):
         if "RENEWABLE_SHARE_ENERGY_CHARTS" not in self.keys():
@@ -216,14 +234,11 @@ class Data:
         )
 
 
-# data_dict = Data()
-
-
 class DataPipeline:
     def __init__(
         self,
         data: Data,
-        request_params = None,
+        request_params=None,
         country_code: str = "de",
     ):
         self.data = data
@@ -243,9 +258,6 @@ class DataPipeline:
 
         if response.is_success:
             if "ENTSOE" in self.api_params.key.name:
-                nett = (
-                    True if "generation" in self.api_params.key.name.lower() else False
-                )
                 try:
                     data = parse_generation(response.text, nett=False)
                     if data.empty:
@@ -308,50 +320,26 @@ class DataPipeline:
             create_map,
         )
 
-        print("in visu")
-
-        new_data_key = set([self.api_params.key.name]) if self.api_params else set()
-        # breakpoint()
-        # daily_capacity_factor_by_source
-        if new_data_key.issubset(
-            necessary_data := set(
-                [
+        with st.session_state.charts["daily_capacity_factor_by_source"]:
+            if not all(
+                key in set(self.data.keys())
+                for key in (
                     DataKeys.CURRENT_GENERATION_ENTSOE.name,
                     DataKeys.CAPACITY_BY_SOURCE_ENTSOE.name,
-                ]
-            )
-        ) and all(key in set(self.data.keys()) for key in necessary_data):
-            print("create new cf chart")
-            with st.session_state.charts["daily_capacity_factor_by_source"]:
-                fig = create_horizontal_bar_chart(
-                    self.data.daily_capacity_factor_by_source(), "test"
                 )
-                st.plotly_chart(fig, theme="streamlit", use_container_width=True)
+            ):
+                data = pd.DataFrame()
+            else:
+                data = self.data.daily_capacity_factor_by_source()
+            fig = create_horizontal_bar_chart(data)
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
-        # current_generation_by_source
-        if new_data_key.issubset(
-            necessary_data := set(
-                [
-                    DataKeys.CURRENT_GENERATION_ENTSOE.name,
-                    DataKeys.TOTAL_FORECAST_ENTSOE.name,
-                    DataKeys.RENEWABLES_FORECAST_ENTSOE.name,
-                ]
+        with st.session_state.charts["current_generation_by_source"]:
+            fig = create_bar_chart2(
+                self.data.current_gen_by_source(),
+                tz=lookup_area(self.country_code).tz,
             )
-        ) and all(key in set(self.data.keys()) for key in necessary_data):
-            with st.session_state.charts["current_generation_by_source"]:
-                print("create curr gen by source")
-                print(self.data.current_gen_by_source().head())
-                # data = self.current_generation_by_source()
-                fig = create_bar_chart2(
-                    self.data.current_gen_by_source(),
-                    tz=lookup_area(self.country_code).tz,
-                )
-                st.plotly_chart(fig, theme="streamlit", use_container_width=True)
-
-        if DataKeys.CAPACITY_BY_SOURCE_ENERGY_CHARTS.name in self.data.keys():
-            with st.session_state.charts["capacity"]:
-                pass
-                # st.dataframe(self.data[DataKeys.CAPACITY_BY_SOURCE_ENERGY_CHARTS.name] )
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         with st.session_state.charts["total_generation"].container():
             (
@@ -375,45 +363,32 @@ class DataPipeline:
             )
             st.plotly_chart(fig_top, theme="streamlit", use_container_width=False)
 
-        if new_data_key.issubset(
-            necessary_data := set(
-                [
-                    DataKeys.RENEWABLE_SHARE_ENERGY_CHARTS.name,
-                ]
+        with st.session_state.charts["renewables_generation"].container():
+            sub_text = "Yesterday"
+            renewable_share_yesterday = self.data.renewable_share_yesterday()
+            fig = create_gauge(
+                renewable_share_yesterday, "%", "Renewable Share", 100, sub_text
             )
-        ) and all(key in set(self.data.keys()) for key in necessary_data):
-            with st.session_state.charts["renewables_generation"].container():
-                sub_text = "Yesterday"
-                renewable_share_yesterday = self.data.renewable_share_yesterday()
-                fig = create_gauge(
-                    renewable_share_yesterday, "%", "Renewable Share", 1, sub_text
-                )
-                st.plotly_chart(fig, theme="streamlit", use_container_width=False)
-                fig_metrics = create_metrics(
-                    "",
-                    renewable_share_yesterday,
-                    tz=lookup_area(self.country_code).tz,
-                    data_df=self.data.renewable_share(),
-                    suffix="%",
-                )
-                st.plotly_chart(
-                    fig_metrics, theme="streamlit", use_container_width=False
-                )
+            st.plotly_chart(fig, theme="streamlit", use_container_width=False)
+            fig_metrics = create_metrics(
+                "",
+                renewable_share_yesterday,
+                tz=lookup_area(self.country_code).tz,
+                data_df=self.data.renewable_share(),
+                suffix="%",
+            )
+            st.plotly_chart(fig_metrics, theme="streamlit", use_container_width=False)
 
-        if DataKeys.CURRENT_GENERATION_ENTSOE.name in self.data.keys():
-            with st.session_state.charts["current_electricity_mix"]:
-                fig = create_pie_chart(
-                    self.data.CURRENT_GENERATION_ENTSOE.stack(level=0)
-                    .unstack()["Actual Aggregated"]
-                    .iloc[-2]
-                    .T.to_frame()
-                    .set_axis(["data"], axis=1),
-                    self.data.CURRENT_GENERATION_ENTSOE.index[-2],
-                )
-                st.plotly_chart(fig, theme="streamlit", use_container_width=True)
+        with st.session_state.charts["current_electricity_mix"]:
+            fig = create_pie_chart(
+                *self.data.current_power_mix(),
+            )
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         with st.session_state.charts["location"]:
-            fig = create_map(pd.DataFrame, self.country_code)
+            fig = create_map(
+                pd.DataFrame, self.country_code, lookup_area(self.country_code).meaning
+            )
             st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
         return self

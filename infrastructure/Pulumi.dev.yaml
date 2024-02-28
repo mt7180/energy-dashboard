@@ -1,4 +1,0 @@
-config:
-  aws:region: eu-central-1
-  rds-energy-dashboard:dbPassword:
-    secure: AAABAKb8fBgrFiTk+LECG79w07UfMsvdH3RlesC34KNaAkIgDVXO7PE=

@@ -83,11 +83,14 @@ def display_header():
         """,
         ],
     ):
-        left, right = st.columns((0.6, 0.4))
+        left, mid, right = st.columns((0.1, 0.5, 0.4))
         with left:
             with st.container():
+                st.markdown("")
+                st.image("./static/icon.png", width=40)
+        with mid:
+            with st.container():
                 st.title(APP_TITLE)
-
         with right:
             with st.container():
                 st.selectbox(
@@ -110,7 +113,7 @@ def set_country_code():
 
 
 def main_page():
-    country_code = st.session_state.country_code
+    # country_code = st.session_state.country_code
 
     if not st.session_state.grid_created:
         # generate chart grid and store in session_state (only once)
@@ -118,7 +121,7 @@ def main_page():
         bottom_left, bottom_right = st.columns(2)
 
         with top_left:
-            col1, col2, col3 = st.columns([1, 1, 2])
+            col1, col2, col3 = st.columns([3, 3, 4])
             with col1:
                 st.session_state.charts["metric1"] = st.empty()
                 st.session_state.charts["total_generation"] = st.empty()
