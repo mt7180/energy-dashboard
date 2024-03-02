@@ -1,20 +1,19 @@
 import streamlit as st
 from streamlit_extras.stylable_container import stylable_container
-from dotenv import load_dotenv
 
 from entsoe import Area as entsoe_areas
 # from entsoe.mappings import lookup_area
 
 import trio
-
 import pathlib
+import logging
 
 from etl.etl import Orchestrator
 
-# from etl.extract_data import DataHandler
-# from etl.visualize_data import draw_charts
-# from plots.create_figures import create_generation_by_source, create_gauge
-load_dotenv()
+app_logger = logging.getLogger("app_logger")
+app_logger.addHandler(logging.StreamHandler())
+app_logger.setLevel(logging.DEBUG)
+
 
 API_URL = ""
 APP_TITLE = "Energy Dashboard"
@@ -48,15 +47,14 @@ def initialize_session_state():
         st.session_state.country_code = "de"  # default value
     if "charts" not in st.session_state:
         st.session_state.charts = {}
+    if "warning" not in st.session_state:
+        st.session_state.warning = None
     if "grid_created" not in st.session_state:
         st.session_state.grid_created = False
     if "data_orchestrator" not in st.session_state:
         st.session_state.data_orchestrator = None
-
-
-# def set_country_code():
-#     st.session_state.country_code = st.session_state.select_box
-#     DataHandler.get_handler().country_code = st.session_state.country_code
+    if "warning_text" not in st.session_state:
+        st.session_state.warning_text = []
 
 
 def display_header():
@@ -66,6 +64,7 @@ def display_header():
             """
             {
             background-color: #1B8A85;
+            color: white;
             text-align: center;
             [data-testid="stHorizontalBlock"] {
                 align-items: center;
@@ -79,6 +78,9 @@ def display_header():
             [data-testid="stVerticalBlockBorderWrapper"] {
                 margin: 0rem 2rem 0rem 2rem; 
             }
+            #energy-dashboard {
+                padding-bottom:0rem;
+            }
         }
         """,
         ],
@@ -90,7 +92,9 @@ def display_header():
                 st.image("./static/icon.png", width=40)
         with mid:
             with st.container():
-                st.title(APP_TITLE)
+                st.title(APP_TITLE)  # , help="data from ENTSO-E and Energy Charts")
+                st.markdown("""powered with data from ENTSO-E and Energy Charts""")
+
         with right:
             with st.container():
                 st.selectbox(
@@ -109,13 +113,14 @@ def set_country_code():
     print("st.session_state.country_code now: ", st.session_state.country_code)
     st.session_state.data_orchestrator.country_code = st.session_state.country_code
     st.session_state.data_orchestrator.data.clear()
+    st.session_state.warning_text.clear()
     st.session_state.grid_created = False
 
 
 def main_page():
-    # country_code = st.session_state.country_code
-
     if not st.session_state.grid_created:
+        st.session_state.warning = st.empty()
+
         # generate chart grid and store in session_state (only once)
         top_left, top_right = st.columns(2)
         bottom_left, bottom_right = st.columns(2)

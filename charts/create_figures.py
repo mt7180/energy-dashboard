@@ -11,50 +11,11 @@ TEXT_COLOR = "#818494"
 TITLE_SIZE = 20
 
 
-def create_bar_chart(df_data):
-    fig = px.bar(
-        df_data.loc[:, ["FC_" not in col for col in df_data.columns]],
-        labels={
-            "value": "Actual Aggregated Generation [MW]",
-            "variable": "Production Type",
-            "index": "Date",
-        },
-        # https://plotly.com/python/discrete-color/
-        color_discrete_sequence=px.colors.qualitative.Light24,
-    )
-    title_str = "Current Power Generation and Forecast by Source"
-
-    fig.update_layout(title=dict(text=title_str, font=dict(size=15), automargin=True))
-    now = pd.Timestamp.today(tz="Europe/Brussels")
-    fig.add_shape(  # add a vertical line (now)
-        type="line",
-        line_color="lightgreen",
-        line_width=4,
-        opacity=1,
-        line_dash="dot",
-        x0=now,
-        x1=now,
-        y0=0,
-        y1=0.9,
-        xref="x",
-        yref="paper",
-    )
-    fig.add_annotation(  # add a text callout with arrow
-        text="today", x=now, y=1.5, yref="paper", arrowhead=1, showarrow=True
-    )
-
-    fig.add_trace(
-        go.Bar(
-            x=df_data.index,  # df_data, #.loc[:, "FC_" not in df_data.columns],#~df_data.columns.isin(['FC_', 'C'])],
-            y=df_data.loc[:, ["FC_" in col for col in df_data.columns]],
-            name="test",
-        )
-    )
-    return fig
-
-
-def create_bar_chart2(df_data: pd.DataFrame, tz):
+def create_bar_chart(df_data: pd.DataFrame, tz: str, df_load):
+    if not df_data.empty:
+        print(df_data.index[0])
     color_sequences_copy = copy.deepcopy(color_sequences)
+
     data = [
         go.Bar(
             x=df_data.index,
@@ -62,6 +23,8 @@ def create_bar_chart2(df_data: pd.DataFrame, tz):
             name=column,
             showlegend=False,
             marker_color=get_color(column, color_sequences_copy),
+            # marker_line_color="white",
+            # marker_line_width = [0, 0, 4],
             hovertext=column,
         )
         for column in sorted(df_data.columns)
@@ -71,6 +34,7 @@ def create_bar_chart2(df_data: pd.DataFrame, tz):
             x=df_data.index,
             y=df_data[column],
             name=column,
+            hovertext=column,
             legend="legend2",
         )
         for column in sorted(df_data.loc[:, ["FC_" in col for col in df_data.columns]])
@@ -83,6 +47,7 @@ def create_bar_chart2(df_data: pd.DataFrame, tz):
         yaxis=dict(title_text="MW"),
         barmode="stack",
         showlegend=True,
+        # marker=dict(line={"color": "white"}),
         title=dict(
             text="Aggregated Generation per Production Type",
             yanchor="top",
@@ -104,23 +69,15 @@ def create_bar_chart2(df_data: pd.DataFrame, tz):
     if df_data.empty:
         return fig
 
-    fig.update_xaxes(
-        dtick=3600000.0,
-        ticklabelstep=12,
-        tickcolor="gray",
-        ticks="outside",
-        ticklen=3,
-    )
-
-    today = pd.Timestamp.today(tz=tz)
+    now = pd.Timestamp.today(tz=tz)
     fig.add_shape(  # add a vertical line (now)
         type="line",
         line_color="#1B8A85",
         line_width=2,
         opacity=1,
         line_dash="dot",
-        x0=today,
-        x1=today,
+        x0=now,
+        x1=now,
         y0=0,
         y1=0.95,
         xref="x",
@@ -128,25 +85,47 @@ def create_bar_chart2(df_data: pd.DataFrame, tz):
     )
     fig.add_annotation(  # add a marker for now
         text="now",
-        x=today,
+        x=now,
         y=1.1,
         yref="paper",
         showarrow=False,
         font={"color": "gray"},
         bgcolor="white",
     )
+
+    delta = 12 if now.hour > 12 else 24
+    start = now.floor("D") - pd.Timedelta(hours=delta)
+    fig.update_xaxes(
+        range=[start, df_data.index[-1]],
+        tickcolor="gray",
+        ticks="outside",
+        ticklen=3,
+    )
+
+    if not df_load.empty:
+        fig.add_trace(
+            px.line(
+                df_load,
+                title="load",
+                y="Actual Consumption",
+                color_discrete_sequence=["rgb(255, 0, 0)"],
+            ).data[0]
+        )
+
+    # fig.update_traces(marker_line_color='white',
+    #              marker_line_width=0.1)
     # fig.layout.legend.itemwidth = 30
     return fig
 
 
-def create_horizontal_bar_chart(data_df: pd.DataFrame) -> go.Figure:
+def create_horizontal_bar_chart(annotation: str, data_df: pd.DataFrame) -> go.Figure:
     color_sequences_copy = copy.deepcopy(color_sequences)
 
     fig = go.Figure()
 
     fig.update_layout(
         title=dict(
-            text="Capacity Factor per Production Type (last 24 Hours)",
+            text="Daily Capacity Factor (Utilization) per Production Type <br><span style='font-size:0.6em; color:gray'>Yesterday<span>",
             yanchor="top",
             y=0.95,
             xanchor="center",
@@ -168,6 +147,21 @@ def create_horizontal_bar_chart(data_df: pd.DataFrame) -> go.Figure:
             x=0.5,
         ),
     )
+
+    if annotation:
+        fig.add_annotation(
+            text=annotation,
+            # bgcolor="lightsalmon",
+            xref="paper",
+            yref="paper",
+            xanchor="center",
+            yanchor="middle",
+            font={"size": 14, "color": SECONDARY_COLOR},
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            # textangle=-10
+        )
 
     if data_df.empty:
         return fig
@@ -301,10 +295,6 @@ def create_gauge(value, indicator_suffix, indicator_title, threshold, sub_text):
             ),
         ],
     )
-    # fig.add_annotation(  # add a text callout
-    #     text="<span style='font-size:0.7rem'>" + sub_text + "</span>", x=0.5, y=0, yref="paper",xanchor="center", showarrow=False, bgcolor="white",
-    #     #domain={'x': [0,1], 'y':[0.7,1]}
-    # )
 
     return fig
 
@@ -414,19 +404,6 @@ def create_pie_chart(df, datetime):
         for source_type in df.index
     }
 
-    # print(df[df["data"]/float(total) > 0.005]["data"],)
-    # df.drop(df[df["data"]/float(total) < 0.005].index, inplace=True)
-    # fig.add_trace(
-    #     go.Pie(
-    #         values=df["data"],
-    #         labels=df.index,
-    #         #textinfo="percent",
-    #         #showlegend=False,
-    #         #insidetextorientation='radial',
-    #         marker=dict(colors=pd.Series(colors)),
-    #         sort=False,
-    #     )
-    # )
     fig = go.Figure()
     fig.update_layout(
         margin=dict(t=70, b=90),
@@ -456,7 +433,7 @@ def create_pie_chart(df, datetime):
     )
 
     fig.update_traces(
-        sort=True,
+        sort=False,
         textinfo="percent",
     )
 
