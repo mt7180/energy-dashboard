@@ -183,8 +183,13 @@ class Data:
     @staticmethod
     def get_last_complete_row_index(df: pd.DataFrame):
         for row in df.index[::-1]:
-            if all(df.loc[row].notna()):
+            total = df.loc[row].sum()
+            timestep_before = df.index[df.index.get_loc(row) - 1]
+            total_before = df.loc[timestep_before].sum()
+
+            if all(df.loc[row].notna()) and abs(1 - total_before / total) < 0.25:
                 return row
+
         return df.index[0]
 
     def current_power_mix(self):
@@ -237,7 +242,6 @@ class Data:
             )
             if warning not in st.session_state.warning_text:
                 st.session_state.warning_text.append(warning)
-        # return 0, 0
 
         # approach with hourly averaged values ... maybe better to change to given timestep size averaged values
         total_aggregated_yesterday = (
@@ -279,6 +283,46 @@ class Data:
             self.RENEWABLE_SHARE_ENERGY_CHARTS.loc[today - pd.Timedelta(days=1), "data"]
             * max([total_load, 1])
             / max([total_power_aggregated, 1])
+        )
+
+    def renewable_share_yesterday2(self):
+        if not all(
+            [
+                "CURRENT_GENERATION_ENTSOE" in self.keys(),
+                "CAPACITY_BY_SOURCE_ENTSOE" in self.keys(),
+            ]
+        ):
+            return 0
+
+        now = pd.Timestamp.now(tz=self.tz)
+        end_time = now.floor("D")
+        start_time = end_time - pd.Timedelta(days=1)
+
+        total_power_aggregated, _ = self.total_power_aggregated_yesterday()
+
+        columns = (
+            self.CURRENT_GENERATION_ENTSOE.head()
+            .stack(level=0)
+            .unstack()["Actual Aggregated"]
+            .columns
+        )
+        keys = ["wind", "solar", "biomass", "hydro", "geothermal"]
+
+        columns_to_sum = [
+            column for column in columns for key in keys if key in column.lower()
+        ]
+
+        return (
+            self.CURRENT_GENERATION_ENTSOE.stack(level=0)
+            .unstack()["Actual Aggregated"]
+            .loc[start_time:end_time][columns_to_sum]
+            .resample("1H")
+            .mean()
+            .sum()
+            .sum()
+            / 10**6
+            / total_power_aggregated
+            * 100
         )
 
     def renewable_share(self):
@@ -441,7 +485,7 @@ class DataPipeline:
 
         with st.session_state.charts["renewables_generation"].container():
             sub_text = "Yesterday"
-            renewable_share_yesterday = round(self.data.renewable_share_yesterday())
+            renewable_share_yesterday = round(self.data.renewable_share_yesterday2())
             fig = create_gauge(
                 renewable_share_yesterday, "%", "Renewable Share", 100, sub_text
             )
@@ -624,7 +668,6 @@ class Orchestrator:
 
         async with httpx.AsyncClient() as httpx_client:
             # with trio slightly faster than with asyncio
-
             async with trio.open_nursery() as nursery:
                 data_pipelines = [
                     (
