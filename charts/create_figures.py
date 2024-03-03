@@ -12,8 +12,6 @@ TITLE_SIZE = 20
 
 
 def create_bar_chart(df_data: pd.DataFrame, tz: str, df_load):
-    if not df_data.empty:
-        print(df_data.index[0])
     color_sequences_copy = copy.deepcopy(color_sequences)
 
     data = [
@@ -347,10 +345,9 @@ def create_metrics(label, value, tz, data_df=None, prefix="", suffix=""):
         for color, column in zip(color_sequence, data_df.columns):
             fig.add_trace(
                 go.Scatter(
-                    # data,
-                    x=data_df.index[::2],
-                    y=data_df[column][::2],
-                    # hoverinfo="skip",
+                    x=data_df.index,
+                    y=data_df[column],
+                    hoverinfo="skip",
                     fill="tozeroy",
                     line={
                         "color": color,
@@ -368,6 +365,7 @@ def create_metrics(label, value, tz, data_df=None, prefix="", suffix=""):
                 y=[data_df[this_year].loc[last_entry]],
                 # hoverinfo="skip",
                 mode="markers",
+                name="today",
                 showlegend=False,
                 marker=dict(
                     color=SECONDARY_COLOR,
