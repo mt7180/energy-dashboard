@@ -13,5 +13,5 @@ A streamlit, plotly, pandas, httpx/ trio (async requests) project.
 
 -- under construction -- 
 
->**Note:** see also a precursiory app with slightly different setup (user sign-up, RDS database, prefect workflow, IaC with pulumi and GitLab CI) on GitLab:
+>**Note:** see also a precursory app with slightly different setup (user sign-up, RDS database, prefect workflow, IaC with pulumi and GitLab CI) on GitLab:
 https://gitlab.com/personal_projects7594544/App2/-/tree/main
