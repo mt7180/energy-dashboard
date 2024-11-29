@@ -453,7 +453,7 @@ def create_pie_chart(df, datetime):
     return fig
 
 
-def create_map(df, country_code: str, text: str):
+def create_map(country_code: str, text: str):
     df = pd.DataFrame(
         data=[
             iso
