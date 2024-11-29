@@ -84,11 +84,12 @@ def create_bar_chart(df_data: pd.DataFrame, tz: str, df_load):
     fig.add_annotation(  # add a marker for now
         text="now",
         x=now,
-        y=1.1,
+        y=-0.1,
         yref="paper",
         showarrow=False,
         font={"color": "gray"},
         bgcolor="white",
+        bordercolor="black",
     )
 
     delta = 12 if now.hour > 12 else 24
@@ -102,17 +103,31 @@ def create_bar_chart(df_data: pd.DataFrame, tz: str, df_load):
 
     if not df_load.empty:
         fig.add_trace(
-            px.line(
-                df_load,
-                title="load",
-                y="Actual Consumption",
-                color_discrete_sequence=["rgb(255, 0, 0)"],
-            ).data[0]
+            go.Scatter(
+                x=df_load.index,
+                y=df_load["Actual Consumption"],
+                mode="lines",
+                name="Actual Total Load",
+                line=dict(
+                    color="firebrick",
+                ),
+                legend="legend2",
+            )
         )
 
-    # fig.update_traces(marker_line_color='white',
-    #              marker_line_width=0.1)
-    # fig.layout.legend.itemwidth = 30
+        fig.add_annotation(  # add comment
+            text="Source: ENTSO-E - Actual Total Load including losses, without stored energy",
+            x=0.5,
+            y=1.13,
+            xanchor="center",
+            yanchor="top",
+            xref="paper",
+            yref="paper",
+            showarrow=False,
+            font={"color": "gray"},
+            bgcolor="white",
+        )
+
     return fig
 
 
