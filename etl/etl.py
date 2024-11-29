@@ -237,8 +237,8 @@ class Data:
         # if entsoe data is missing for any source:
         if len(hourly_mean_aggregated) != hourly_mean_aggregated.notna().T.all().sum():
             warning = (
-                "Data obtained from the entsoe transparency platform is incomplete, "
-                + "visualized data should be used with caution ..."
+                "Current Generation Data obtained from the entsoe transparency platform is incomplete, "
+                + "use visualized data with caution ..."
             )
             if warning not in st.session_state.warning_text:
                 st.session_state.warning_text.append(warning)
@@ -363,7 +363,7 @@ class DataPipeline:
                 )
 
             except httpx.RequestError as e:
-                warning = f"API request returned exception: {self.api_params.url}: {self.api_params.key.name} ({self.country_code}) ... {e!r}"
+                warning = f"API request returned exception: no {self.api_params.key.name} available: ... {e!r}"
                 logger.debug(warning)
                 logger.debug(
                     f"{self.api_params.key.name}: attempt: {attempt} raised error {e}, retrying ..."
@@ -387,6 +387,8 @@ class DataPipeline:
                 try:
                     data = parse_generation(response.text, nett=False)
                     if data.empty:
+                        warning = f"no entsoe data available: {self.api_params.url}: {self.api_params.key.name} ({self.country_code}) ... "
+                        logger.debug(warning)
                         raise ValueError("no entsoe data available...")
                     data = data.tz_convert(lookup_area(self.country_code).tz)
                     self.data.add(
@@ -397,6 +399,11 @@ class DataPipeline:
 
                 except KeyError as e:
                     logger.info(f"parsing entsoe data was not possible: {e}")
+                except ValueError:
+                    warning = "no entsoe data available"
+                    logger.info(warning)
+                    if warning not in st.session_state.warning_text:
+                        st.session_state.warning_text.append(warning)
                 else:
                     # save as instant data
                     self.data.get(key_name).to_pickle(
@@ -594,8 +601,8 @@ class Orchestrator:
                     "securityToken": os.getenv("ENTSOE_API_KEY", ""),
                     "periodStart": self.format_date_for_entsoe(start),
                     "periodEnd": self.format_date_for_entsoe(end),
-                    "documentType": "A65",
-                    "ProcessType": "A16",
+                    "documentType": "A65",  # System total load
+                    "ProcessType": "A16",  # Realised
                     "outBiddingZone_Domain": lookup_area(self.country_code).value,
                 },
             ),
@@ -625,7 +632,7 @@ class Orchestrator:
                     "securityToken": os.getenv("ENTSOE_API_KEY", ""),
                     "periodStart": self.format_date_for_entsoe(start),
                     "periodEnd": self.format_date_for_entsoe(end),
-                    "documentType": "A68",  # 'A75': 'Actual generation per type',
+                    "documentType": "A68",  # Installed generation per type
                     "ProcessType": "A33",
                     "in_Domain": lookup_area(
                         self.country_code
@@ -641,8 +648,8 @@ class Orchestrator:
                     "periodEnd": self.format_date_for_entsoe(
                         end + pd.Timedelta(hours=24)
                     ),
-                    "documentType": "A71",  # 'A75': 'Actual generation per type',
-                    "ProcessType": "A01",
+                    "documentType": "A71",  # Generation forecast,
+                    "ProcessType": "A01",  # Day ahead
                     "in_Domain": lookup_area(
                         self.country_code
                     ).value,  # default is Germany: '10Y1001A1001A83F'
