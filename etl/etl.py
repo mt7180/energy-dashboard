@@ -9,13 +9,12 @@ import json
 import pathlib
 import trio
 
-from typing import Self
 import os
 # import streamlit as st
 
 from dotenv import load_dotenv
 import logging
-from etl.data import Data
+from etl.data import Data, Country
 
 logger = logging.getLogger("app_logger")
 
@@ -27,20 +26,33 @@ RequestParams = collections.namedtuple("RequestParams", ["key", "url", "params"]
 class DataPipeline:
     def __init__(
         self,
-        data: Data,
+        processor,
         request_params=None,
     ):
-        self.data = data
-        self.raw_data = None
+        self.processor: DataProcessor = processor
         self.api_params: RequestParams = request_params
+        self.id: str = self.api_params.key.name if request_params else "read_instant"
+        self.country: Country = self.processor.data.country
+        self.warnings: list[str] = []
 
-    async def extract(self, client: httpx.AsyncClient, retries: int) -> Self:
+    @staticmethod
+    def create_empty_response():
+        """Create an empty httpx.Response object."""
+        return httpx.Response(
+            status_code=0,
+            request=httpx.Request(
+                "GET", "placeholder_url"
+            ),  # Dummy request for context
+        )
+
+    async def extract(self, client: httpx.AsyncClient, retries: int) -> httpx.Response:
         if not self.api_params:
+            logger.debug("no request params")
             raise ValueError("no request parameters provided for extraction")
 
         logger.debug(f"{self.api_params.key.name} starts")
 
-        for attempt in range(retries):
+        for attempt in range(1, retries + 1):
             try:
                 response = await client.get(
                     url=self.api_params.url, params=self.api_params.params
@@ -58,102 +70,93 @@ class DataPipeline:
                 if attempt < retries:
                     continue
                 else:
-                    logging.debug(f"{self.api_params.key.name}: all attempts failed")
-                    # if warning not in self.data.warning:
-                    self.data.warning.append(warning)
-                return self
+                    logger.debug(f"{self.api_params.key.name}: all attempts failed")
+                    self.warnings.append(warning)
+                    response = self.create_empty_response()
 
             else:
                 # when attempt was successful
-                self.raw_data = response
                 break
 
-        return self
+        return response
 
-    def transform(self) -> Self:
-        if not self.raw_data or not self.raw_data.is_success:
-            return self
-        key_name = self.api_params.key.name
+    def transform(self, raw_data) -> pd.DataFrame:
+        if not raw_data or not raw_data.is_success:
+            return pd.DataFrame()
+        key_name = self.id
 
-        # if self.raw_data and self.raw_data.is_success:
         try:
             if "ENTSOE" in self.api_params.key.name:
                 try:
-                    data = parse_generation(self.raw_data.text, nett=False)
+                    data = parse_generation(raw_data.text, nett=False)
                     if data.empty:
-                        warning = f"no entsoe data available: {self.api_params.url}: {self.api_params.key.name} ({self.data.country.code}) ... "
+                        warning = f"no entsoe data available: {self.api_params.url}: {key_name} ({self.country.code}) ... "
                         logger.debug(warning)
-                        raise ValueError("no entsoe data available...")
-                    data = data.tz_convert(self.data.country.tz)
-                    self.data.add(
-                        key_name,
-                        data.to_frame() if isinstance(data, pd.Series) else data,
-                        self.data.country.code,
-                    )
+                        # self.warnings.append(warning)
+                        raise ValueError(warning)
+                    data = data.tz_convert(self.country.tz)
+                    df = data.to_frame() if isinstance(data, pd.Series) else data
 
                 except KeyError as e:
                     logger.info(f"parsing entsoe data was not possible: {e}")
-
+                    df = pd.DataFrame()
             else:
-                data = json.loads(self.raw_data.text)
+                data = json.loads(raw_data.text)
                 index = data.pop(list(data.keys())[0])  # rely on dict order
-
-                self.data.add(
-                    key_name,
-                    pd.DataFrame(
-                        data,
-                        index=pd.DatetimeIndex(
-                            pd.to_datetime(index, format="%d.%m.%Y")
-                        ).tz_localize(self.data.country.tz),
-                    ),
-                    self.data.country.code,
+                df = pd.DataFrame(
+                    data,
+                    index=pd.DatetimeIndex(
+                        pd.to_datetime(index, format="%d.%m.%Y")
+                    ).tz_localize(self.country.tz),
                 )
+
         except (ValueError, AttributeError):
             warning = f"no {key_name} data available"
-            logger.info(warning)
-            if warning not in self.data.warning:
-                self.data.warning.append(warning)
-            logger.debug(f"{key_name}: {self.raw_data}")
+            logger.debug(warning)
+            self.warnings.append(warning)
+            # logger.debug(f"{key_name}: {raw_data}")
+            df = pd.DataFrame()
 
-        return self
+        return df
 
-    def load(self) -> Self:
-        if self.api_params.key.name in self.data.keys():
-            # save as instant data
-            key_name = self.api_params.key.name
-            data_to_load = self.data.get(key_name)
-            if data_to_load is not None:
-                data_to_load.to_pickle(
-                    f"{cfd / 'tmp'}/{key_name}_{self.data.country.code.upper()}.pkl"
-                )
-                logger.debug(f"{key_name} {self.data.country.code.upper()} loaded")
+    async def load(self, df: pd.DataFrame) -> None:
+        key_name = self.api_params.key.name
+        country_code = self.country.code.upper()
 
-        return self
+        await self.processor.add_data(key_name, df, country_code, self.warnings)
+
+        # save as instant data
+        key_name = self.api_params.key.name
+        if not df.empty:
+            df.to_pickle(f"{cfd / 'tmp'}/{key_name}_{country_code}.pkl")
 
     async def run(self, client: httpx.AsyncClient) -> None:
-        ((await self.extract(client, retries=3)).transform().load())
+        extracted_data = await self.extract(client, retries=3)
+        transformed_data = self.transform(extracted_data)
+        await self.load(transformed_data)
 
     def read_instant_data(self, path=cfd / "tmp"):
-        logger.debug(f"load instant data {self.data.country.code}")
+        country_code = self.processor.data.country.code
+        logger.debug(f"load instant data {country_code}")
         files = os.listdir(path)
         pickle_files = [file for file in files if file.endswith(".pkl")]
 
         for file_name in pickle_files:
-            if self.data.country.code.upper() not in file_name:
+            if country_code.upper() not in file_name:
                 continue
-            if file_name.split("_" + self.data.country.code.upper())[0] not in [
+            if file_name.split("_" + country_code.upper())[0] not in [
                 key.name for key in Data.name_keys()
             ]:
                 continue
             file_path = os.path.join(path, file_name)
-            name = file_name.split("_" + self.data.country.code.upper())[0]
+            name = file_name.split("_" + country_code.upper())[0]
             logger.debug(f"... loading {name}")
 
             data = pd.read_pickle(file_path)
             if not isinstance(data, pd.DataFrame):
                 data = data.to_frame()
 
-            self.data.add(name, data, self.data.country.code)
+            self.processor.data.add(name, data, country_code)
         logger.debug("finished loading instant data")
 
 
@@ -163,8 +166,20 @@ class DataProcessor:
     def __init__(self, country_code="DE"):
         logging.debug("a new data processor is alive...")
         self.data = Data(country_code.upper())
-        self.set_country_code(country_code)
+        self.data_lock = trio.Lock()
+        # self.set_country_code(country_code)
         self.completed = False
+        DataPipeline(self).read_instant_data()
+
+    async def add_data(self, key_name, df, country_code, warnings=[]) -> None:
+        async with self.data_lock:
+            if not df.empty:
+                self.data.add(
+                    key_name,
+                    df,
+                    country_code,
+                )
+            self.data.warning.extend(warnings)
 
     @staticmethod
     def format_date_for_entsoe(date: pd.Timestamp):
@@ -176,8 +191,9 @@ class DataProcessor:
         return date_str[:-2] + ":" + date_str[-2:]
 
     def set_country_code(self, country_code):
-        self.data.clear(country_code.upper())
-        DataPipeline(data=self.data).read_instant_data()
+        self.data.set_country(country_code.upper())
+        DataPipeline(self).read_instant_data()
+        self.completed = False
 
     async def run_etl(self) -> None:
         entsoe_api = "https://web-api.tp.entsoe.eu/api"
@@ -273,13 +289,14 @@ class DataProcessor:
             async with trio.open_nursery() as nursery:
                 data_pipelines = [
                     (
-                        DataPipeline(self.data, request).run,
+                        DataPipeline(self, request).run,
                         httpx_client,
+                        request.key.name,
                     )
                     for request in requests
                 ]
-                for data_pipeline in data_pipelines:
-                    nursery.start_soon(*data_pipeline)
+                for func, client, task_name in data_pipelines:
+                    nursery.start_soon(func, client, name=task_name)
 
         self.completed = True
 

@@ -40,6 +40,12 @@ margin: 0px 0px;
 }
 """
 
+st.set_page_config(
+    page_title=APP_TITLE,
+    page_icon="⚡",
+    layout="wide",
+)
+
 
 class DashBoard:
     """streamlit dashboard for power generation and consumption data"""
@@ -53,11 +59,6 @@ class DashBoard:
         self.main_page()
 
     def set_page_settings(self):
-        st.set_page_config(
-            page_title=APP_TITLE,
-            page_icon="⚡",
-            layout="wide",
-        )
         with open(cfd / "static" / "style.css") as f:
             st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
@@ -65,7 +66,7 @@ class DashBoard:
         if "container_counter" not in st.session_state:
             st.session_state.container_counter = 0
         if "country_code" not in st.session_state:
-            st.session_state.country_code = "de"  # default value
+            st.session_state.country_code = "DE"  # default value
         if "charts" not in st.session_state:
             st.session_state.charts = {}
         if "warning" not in st.session_state:
@@ -129,7 +130,7 @@ class DashBoard:
 
     def set_country_code(self):
         st.session_state.country_code = st.session_state.select_box.lower()
-        logging.debug(
+        app_logger.debug(
             f"st.session_state.country_code now: {st.session_state.country_code}"
         )
         data_processor.set_country_code(st.session_state.country_code)
@@ -255,9 +256,16 @@ data_processor = DataProcessor(st.session_state.get("country_code", "DE"))
 dashboard = DashBoard(data_processor)
 
 
+class AsyncTracer(trio.abc.Instrument):
+    def task_exited(self, task):
+        # repr(task) is perhaps more useful than task.name in general,
+        # but in context of a tutorial the extra noise is unhelpful.
+        app_logger.debug(f"{task.name} finished")
+
+
 async def main():
     await dashboard.run()
 
 
 if __name__ == "__main__":
-    trio.run(main)
+    trio.run(main, instruments=[AsyncTracer()])

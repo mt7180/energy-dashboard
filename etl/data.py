@@ -81,8 +81,9 @@ class Data:
 
         self.__data.update({key_name: data_record})
 
-    def clear(self, new_country_code) -> None:
-        self.__data.clear()
+    def set_country(self, new_country_code) -> None:
+        self.__data = {}
+        self.warnings: list[str] = []
         self.country = new_country_code
 
     @staticmethod
