@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit.logger import get_logger
 from streamlit_extras.stylable_container import stylable_container
 
 from entsoe import Area as entsoe_areas
@@ -20,9 +21,7 @@ from etl.etl import DataProcessor
 
 # from charts.create_figures import visualize
 
-
-app_logger = logging.getLogger("app_logger")
-app_logger.addHandler(logging.StreamHandler())
+app_logger = get_logger("app_logger")
 app_logger.setLevel(logging.DEBUG)
 
 
