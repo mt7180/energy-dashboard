@@ -163,6 +163,7 @@ class DashBoard:
                 st.session_state.charts["daily_capacity_factor_by_source"] = st.empty()
             st.session_state.grid_created = True
 
+    @st.fragment(run_every=None if st.session_state.get("completed", None) else 1)
     def render(self):
         data = self.data_processor.data
         st.session_state.warning_text = self.data_processor.data.warning
@@ -243,10 +244,6 @@ class DashBoard:
         if not data_processor.completed:
             async with trio.open_nursery() as nursery:
                 nursery.start_soon(self.data_processor.run_etl)
-
-                while not data_processor.completed:
-                    self.render()
-                    await trio.sleep(1)
 
         self.render()
 
