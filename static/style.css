@@ -10,10 +10,10 @@ html, body, [class*="css"] {
     /* padding-bottom: 0;
 } */
 
-.main > div {
+[data-testid="stMainBlockContainer"] {
     padding-left: 2rem;
     padding-right: 2rem;
-    padding-top: 1rem;
+    padding-top: 2rem;
     padding-bottom: 1rem;
     background-color: #F8F8F8;
    
