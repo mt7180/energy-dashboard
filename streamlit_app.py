@@ -39,11 +39,27 @@ margin: 0px 0px;
 }
 """
 
-st.set_page_config(
-    page_title=APP_TITLE,
-    page_icon="⚡",
-    layout="wide",
-)
+
+def set_page_settings():
+    with open(cfd / "static" / "style.css") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+
+def initialize_session_state():
+    if "container_counter" not in st.session_state:
+        st.session_state.container_counter = 0
+    if "country_code" not in st.session_state:
+        st.session_state.country_code = "DE"  # default value
+    if "charts" not in st.session_state:
+        st.session_state.charts = {}
+    if "warning" not in st.session_state:
+        st.session_state.warning = None
+    if "grid_created" not in st.session_state:
+        st.session_state.grid_created = False
+    if "run_every" not in st.session_state:
+        st.session_state.run_every = 1
+    if "warning_text" not in st.session_state:
+        st.session_state.warning_text = []
 
 
 class DashBoard:
@@ -52,30 +68,8 @@ class DashBoard:
     def __init__(self, data_processor):
         """put the streamlit app together"""
         self.data_processor = data_processor
-        self.set_page_settings()
-        self.initialize_session_state()
         self.display_header()
         self.main_page()
-
-    def set_page_settings(self):
-        with open(cfd / "static" / "style.css") as f:
-            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-
-    def initialize_session_state(self):
-        if "container_counter" not in st.session_state:
-            st.session_state.container_counter = 0
-        if "country_code" not in st.session_state:
-            st.session_state.country_code = "DE"  # default value
-        if "charts" not in st.session_state:
-            st.session_state.charts = {}
-        if "warning" not in st.session_state:
-            st.session_state.warning = None
-        if "grid_created" not in st.session_state:
-            st.session_state.grid_created = False
-        if "data_orchestrator" not in st.session_state:
-            st.session_state.data_orchestrator = None
-        if "warning_text" not in st.session_state:
-            st.session_state.warning_text = []
 
     def display_header(self):
         with stylable_container(
@@ -136,6 +130,7 @@ class DashBoard:
         #        st.session_state.data_processor.data.clear(st.session_state.country_code)
         st.session_state.warning_text.clear()
         st.session_state.grid_created = False
+        st.session_state.run_every = 1
 
     def main_page(self):
         if not st.session_state.grid_created:
@@ -163,8 +158,14 @@ class DashBoard:
                 st.session_state.charts["daily_capacity_factor_by_source"] = st.empty()
             st.session_state.grid_created = True
 
-    @st.fragment(run_every=None if st.session_state.get("completed", None) else 1)
+        self.render()
+
+    @st.fragment(run_every=st.session_state.get("run_every", "1s"))
     def render(self):
+        if self.data_processor.completed and st.session_state.run_every is not None:
+            st.session_state.run_every = None
+            st.rerun()
+
         data = self.data_processor.data
         st.session_state.warning_text = self.data_processor.data.warning
         if text := st.session_state.warning_text:
@@ -245,12 +246,6 @@ class DashBoard:
             async with trio.open_nursery() as nursery:
                 nursery.start_soon(self.data_processor.run_etl)
 
-        self.render()
-
-
-data_processor = DataProcessor(st.session_state.get("country_code", "DE"))
-dashboard = DashBoard(data_processor)
-
 
 class AsyncTracer(trio.abc.Instrument):
     def task_exited(self, task):
@@ -259,9 +254,16 @@ class AsyncTracer(trio.abc.Instrument):
         app_logger.debug(f"{task.name} finished")
 
 
-async def main():
-    await dashboard.run()
-
-
 if __name__ == "__main__":
-    trio.run(main, instruments=[AsyncTracer()])
+    st.set_page_config(
+        page_title=APP_TITLE,
+        page_icon="⚡",
+        layout="wide",
+    )
+    set_page_settings()
+    initialize_session_state()
+
+    data_processor = DataProcessor(st.session_state.get("country_code", "DE"))
+    dashboard = DashBoard(data_processor)
+
+    trio.run(dashboard.run, instruments=[AsyncTracer()])
